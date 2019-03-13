@@ -14,11 +14,15 @@ class SettingRepository extends ModuleRepository
         $this->model = $model;
     }
 
-    public function byKey($key, $section = null)
+    public function byKey($key, $section = null, $lang = 'en')
     {
-        return $this->model->when($section, function ($query) use ($section) {
-            $query->where('section', $section);
-        })->where('key', $key)->exists() ? $this->model->where('key', $key)->with('translations')->first()->value : null;
+        $translations = $this->model->when($section, function ($query) use ($section) { 
+            $query->where('section', $section); 
+        })->where('key', $key)->exists() 
+        ? $this->model->where('key', $key)->with(['translations' => function ($query) use($lang) { $query->where('locale', $lang)->first(); } ])->first()->translations 
+        : null;
+
+        return !empty($translations) && count($translations) > 0 ? $translations->first()->value : null;
     }
 
     public function getFormFields($section = null)
