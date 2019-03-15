@@ -1,6 +1,6 @@
 <?php
 
-namespace A17\Twill\Repositories\Behaviors;
+namespace App\Repositories\Behaviors;
 
 use A17\Twill\Models\Behaviors\HasMedias;
 use A17\Twill\Repositories\BlockRepository;
@@ -54,10 +54,20 @@ trait HandleBlocks
 
             $blockCreated = $blockRepository->create($block);
 
-            $block['blocks']->each(function ($childBlock) use ($blockCreated, $blockRepository) {
-                $childBlock['parent_id'] = $blockCreated->id;
-                $blockRepository->create($childBlock);
-            });
+            $this->afterSaveHandleRecursiveBlocks($object, $blockRepository, $block, $blockCreated->id);
+        });
+    }
+
+    private function afterSaveHandleRecursiveBlocks($object, $blockRepository, $block, $parent_id) {
+        $block['blocks']->each(function ($childBlock) use ($object, $parent_id, $blockRepository) {
+            $childBlock['parent_id'] = $parent_id;
+            $blockCreated = $blockRepository->create($childBlock);
+
+            if ($childBlock['blocks']) {
+                $childBlockRepository = app(BlockRepository::class);
+
+                $this->afterSaveHandleRecursiveBlocks($object, $childBlockRepository, $childBlock, $blockCreated->id);
+            }
         });
     }
 
@@ -69,27 +79,34 @@ trait HandleBlocks
             foreach ($fields['blocks'] as $index => $block) {
                 $block = $this->buildBlock($block, $object);
                 $block['position'] = $index + 1;
-
-                $childBlocksList = collect();
-
-                foreach ($block['blocks'] as $childKey => $childBlocks) {
-                    foreach ($childBlocks as $index => $childBlock) {
-                        $childBlock = $this->buildBlock($childBlock, $object, true);
-
-                        $childBlock['child_key'] = $childKey;
-                        $childBlock['position'] = $index + 1;
-
-                        $childBlocksList->push($childBlock);
-                    }
-                }
-
-                $block['blocks'] = $childBlocksList;
+                $block['blocks'] = $this->getRecursiveBlocks($object, $block);
 
                 $blocks->push($block);
             }
         }
 
         return $blocks;
+    }
+
+    public function getRecursiveBlocks($object, $block) {
+        $childBlocksList = collect();
+
+        foreach ($block['blocks'] as $childKey => $childBlocks) {
+            foreach ($childBlocks as $index => $childBlock) {
+                $childBlock = $this->buildBlock($childBlock, $object, true);
+
+                $childBlock['child_key'] = $childKey;
+                $childBlock['position'] = $index + 1;
+
+                if ($childBlock['blocks']) {
+                    $childBlock['blocks'] = $this->getRecursiveBlocks($object, $childBlock);
+                }
+
+                $childBlocksList->push($childBlock);
+            }
+        }
+
+        return $childBlocksList;
     }
 
     private function buildBlock($block, $object, $repeater = false)
